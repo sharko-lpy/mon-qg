@@ -489,8 +489,12 @@ function postDue(){const b=B(),T=td(),now=ym(T);let ch=false;
   b.prev=b.prev.filter(p=>{if(p.d<=T){b.tx.push({id:uid(),t:p.t,m:p.m,c:p.c,n:p.n,d:p.d});ch=true;return false}return true});
   if(ch)save()}
 
-function proj(){const b=B(),T=td(),now=ym(T),out=[];let bal=soldeNow();
-  for(let i=0;i<6;i++){const M=addM(now,i);let r=0,d=0;
+function planned(M){const b=B(),T=td(),out=[];
+  for(const f of b.fixes){if(f.from>M||(f.yr&&+M.slice(5)!==f.mon))continue;const d=M+'-'+pad(Math.min(f.day,dim(M)));if(d<=T)continue;out.push({...f,d,src:'fx'})}
+  for(const p of b.prev){if(ym(p.d)===M&&p.d>T)out.push({...p,src:'pv'})}
+  return out.sort((a,c)=>a.d.localeCompare(c.d))}
+function proj(n=6){const b=B(),T=td(),now=ym(T),out=[];let bal=soldeNow();
+  for(let i=0;i<n;i++){const M=addM(now,i);let r=0,d=0;
     for(const f of b.fixes){if(f.from>M||(f.yr&&+M.slice(5)!==f.mon))continue;const dt=M+'-'+pad(Math.min(f.day,dim(M)));if(dt<=T)continue;f.t==='rev'?r+=f.m:d+=f.m}
     for(const p of b.prev){if(ym(p.d)!==M||p.d<=T)continue;p.t==='rev'?r+=p.m:d+=p.m}
     bal+=r-d;out.push({M,r,d,bal})}
@@ -504,25 +508,27 @@ const chev=d=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" strok
 function bank(){postDue();const b=B();
   document.querySelectorAll('#btabs button').forEach(x=>x.classList.toggle('on',x.dataset.bt===bt));fabVis();
   let h='';
-  if(bt==='mois'){
-    const txs=b.tx.filter(t=>ym(t.d)===bm).sort((a,c)=>c.d.localeCompare(a.d));
-    const rv=txs.filter(t=>t.t==='rev').reduce((s,t)=>s+t.m,0),dp=txs.filter(t=>t.t==='dep').reduce((s,t)=>s+t.m,0);
-    const g={};txs.filter(t=>t.t==='dep').forEach(t=>g[t.c]=(g[t.c]||0)+t.m);
+  if(bt==='mois'){const now=ym(td()),fut=bm>now;
+    const txs=fut?[]:b.tx.filter(t=>ym(t.d)===bm).sort((a,c)=>c.d.localeCompare(a.d)),pl=bm>=now?planned(bm):[];
+    const src=fut?pl:txs;
+    const rv=src.filter(t=>t.t==='rev').reduce((s,t)=>s+t.m,0),dp=src.filter(t=>t.t==='dep').reduce((s,t)=>s+t.m,0);
+    const g={};src.filter(t=>t.t==='dep').forEach(t=>g[t.c]=(g[t.c]||0)+t.m);
     const gs=Object.entries(g).sort((a,c)=>c[1]-a[1]),mx=gs[0]?.[1]||1;
-    const days={};txs.forEach(t=>(days[t.d]=days[t.d]||[]).push(t));
+    const group=L=>{const days={};L.forEach(t=>(days[t.d]=days[t.d]||[]).push(t));return Object.keys(days).sort((a,c)=>fut||L===pl?a.localeCompare(c):c.localeCompare(a)).map(d=>`<div class="day">${new Date(d+'T12:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</div>
+      <div class="glass list">${days[d].map(t=>t.src?row(t,t.src==='pv'?'data-pv':'data-fx',cat(t.t,t.c)[1]+(t.src==='fx'?' · fixe':' · prévu')):row(t,'data-tx',cat(t.t,t.c)[1]+(t.f?' · fixe':''))).join('')}</div>`).join('')};
+    const endBal=bm>=now?proj(13).find(p=>p.M===bm)?.bal:null;
     h=`<div class="card glass big" style="min-height:0;gap:8px"><div class="k">${svg('banque','width="15" height="15"')}Compte courant</div>
       <div class="v">${b.init||b.tx.length?fmt(soldeNow()):'—'}</div>
       <div class="acts" style="margin-top:4px"><button class="btn sec" id="adj">${b.init?'Ajuster le solde':'Entrer mon solde actuel'}</button></div></div>
-    <div class="mnav"><button class="glass" data-mv="-1" aria-label="Mois précédent">${chev('M15 18l-6-6 6-6')}</button><b>${mlabel(bm)}</b>
-      <button class="glass" data-mv="1" aria-label="Mois suivant" ${bm>=ym(td())?'disabled style="opacity:.3"':''}>${chev('M9 18l6-6-6-6')}</button></div>
-    <div class="stats"><div class="stat glass"><span>Revenus</span><b class="pos">+${fmt(rv)}</b></div><div class="stat glass"><span>Dépenses</span><b>−${fmt(dp)}</b></div>
-      <div class="stat glass"><span>Reste</span><b class="${rv-dp<0?'neg':''}">${fmt(rv-dp)}</b></div></div>
-    <h2>Dépenses par catégorie</h2>
-    <div class="glass box">${gs.length?gs.map(([c,v])=>{const k=cat('dep',c);return `<div class="b"><div class="l"><span>${k[1]}</span><span>${fmt(v)}</span></div><div class="t"><i style="width:${v/mx*100}%;background:${k[2]}"></i></div></div>`}).join(''):'<p class="sub" style="margin:0">Aucune dépense ce mois-ci.</p>'}</div>
-    <h2>Opérations</h2>
-    ${txs.length?Object.keys(days).map(d=>`<div class="day">${new Date(d+'T12:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</div>
-      <div class="glass list">${days[d].map(t=>row(t,'data-tx',cat(t.t,t.c)[1]+(t.f?' · fixe':''))).join('')}</div>`).join('')
-      :'<div class="glass box"><p class="sub" style="margin:0">Touche le bouton + pour ajouter une dépense ou un revenu.</p></div>'}
+    <div class="mnav"><button class="glass" data-mv="-1" aria-label="Mois précédent">${chev('M15 18l-6-6 6-6')}</button><b>${mlabel(bm)}${fut?' <span class="badge warn" style="margin:0 0 0 6px;vertical-align:middle">prévu</span>':''}</b>
+      <button class="glass" data-mv="1" aria-label="Mois suivant" ${bm>=addM(now,12)?'disabled style="opacity:.3"':''}>${chev('M9 18l6-6-6-6')}</button></div>
+    <div class="stats"><div class="stat glass"><span>${fut?'Revenus prévus':'Revenus'}</span><b class="pos">+${fmt(rv)}</b></div><div class="stat glass"><span>${fut?'Dépenses prévues':'Dépenses'}</span><b>−${fmt(dp)}</b></div>
+      ${endBal!=null&&(b.init||b.tx.length)?`<div class="stat glass"><span>Fin de mois</span><b class="${endBal<0?'neg':''}">${fmt(endBal)}</b></div>`:`<div class="stat glass"><span>Reste</span><b class="${rv-dp<0?'neg':''}">${fmt(rv-dp)}</b></div>`}</div>
+    <h2>${fut?'Dépenses prévues par catégorie':'Dépenses par catégorie'}</h2>
+    <div class="glass box">${gs.length?gs.map(([c,v])=>{const k=cat('dep',c);return `<div class="b"><div class="l"><span>${k[1]}</span><span>${fmt(v)}</span></div><div class="t"><i style="width:${v/mx*100}%;background:${k[2]}"></i></div></div>`}).join(''):`<p class="sub" style="margin:0">${fut?'Rien de prévu pour l’instant.':'Aucune dépense ce mois-ci.'}</p>`}</div>
+    ${fut?`<h2>Prévu ce mois-là</h2>${pl.length?group(pl):'<div class="glass box"><p class="sub" style="margin:0">Touche le bouton + pour prévoir une dépense ou un revenu ce mois-là.</p></div>'}`
+    :`${pl.length?`<h2>À venir ce mois-ci</h2>${group(pl)}`:''}<h2>Opérations</h2>
+    ${txs.length?group(txs):'<div class="glass box"><p class="sub" style="margin:0">Touche le bouton + pour ajouter une dépense ou un revenu.</p></div>'}`}
     <div style="height:80px"></div>`;
   }else if(bt==='prev'){
     const P=proj(),mx=Math.max(...P.map(p=>Math.abs(p.bal)),1);
@@ -548,7 +554,7 @@ function bank(){postDue();const b=B();
   $('#bbody').innerHTML=h;
 }
 $('#btabs').onclick=e=>{const x=e.target.closest('[data-bt]');if(!x)return;bt=x.dataset.bt;bank()};
-$('#fab').onclick=()=>cur==='sport'?(stab==='s'?seanceForm():mesForm()):cur==='abos'?aboForm():cur==='obj'?objForm():cur==='bts'?(btab==='agenda'?evForm():ficheForm()):cur==='docs'?docForm():cur==='car'?(ctab==='pleins'?pleinForm():entForm()):form('tx');
+$('#fab').onclick=()=>cur==='sport'?(stab==='s'?seanceForm():mesForm()):cur==='abos'?aboForm():cur==='obj'?objForm():cur==='bts'?(btab==='agenda'?evForm():ficheForm()):cur==='docs'?docForm():cur==='car'?(ctab==='pleins'?pleinForm():entForm()):form('tx',null,null,bm>ym(td())?bm+'-'+pad(Math.min(new Date().getDate(),dim(bm))):null);
 $('#bbody').addEventListener('click',e=>{const b=B(),q=s=>e.target.closest(s);let x;
   if(x=q('[data-mv]')){if(x.disabled)return;bm=addM(bm,+x.dataset.mv);bank()}
   else if(q('#adj'))adjust();
@@ -564,7 +570,7 @@ function adjust(){const b=B();
   $('#as').focus();
   $('#aok').onclick=()=>{const v=num($('#as').value);if(isNaN(v))return toast('Entre un montant');b.start+=v-soldeNow();b.init=true;save();close();bank();toast('Solde mis à jour')}}
 
-function form(kind,item,t0){
+function form(kind,item,t0,d0){
   if(kind==='fixe'&&item&&(item.id==='car-assur'||item.id.startsWith('abo:'))){const ab=item.id.startsWith('abo:'),src=ab?'Abonnements':'Voiture';
     sheet(`<h2 style="margin-top:0">${esc(item.n)}</h2><p class="sub">Ce fixe vient de la rubrique ${src}. Modifie-le là-bas, il se mettra à jour ici.</p>
     <div class="acts"><button class="btn" id="golk">Ouvrir ${src}</button><button class="btn sec" data-close>Fermer</button></div>`);
@@ -575,9 +581,9 @@ function form(kind,item,t0){
     $('#golk').onclick=()=>{close();if(isCar){ctab=item.link.startsWith('car:p')?'pleins':'ent';show('car')}else show('obj')};return}
   const b=B(),list={tx:b.tx,prev:b.prev,fixe:b.fixes}[kind];
   const tom=new Date();tom.setDate(tom.getDate()+1);
-  const f=item?{...item}:{t:t0||'dep',m:'',c:'',n:'',d:kind==='prev'?iso(tom):td(),day:new Date().getDate()};
+  const f=item?{...item}:{t:t0||'dep',m:'',c:'',n:'',d:d0||(kind==='prev'?iso(tom):td()),day:new Date().getDate(),r:1};
   const ttl={tx:item?'Modifier l’opération':'Nouvelle opération',prev:item?'Dépense prévue':'Prévoir une dépense',fixe:item?'Modifier le fixe':'Nouveau fixe'}[kind];
-  const grab=()=>{f.m=$('#fm').value;f.n=$('#fn').value;if(kind==='fixe')f.day=$('#fd').value;else f.d=$('#fd').value};
+  const grab=()=>{f.m=$('#fm').value;f.n=$('#fn').value;if(kind==='fixe')f.day=$('#fd').value;else f.d=$('#fd').value;if($('#fr'))f.r=$('#fr').value};
   let arm=false;
   const draw=()=>{const cats=CAT[f.t];if(!cats.some(c=>c[0]===f.c))f.c=cats[0][0];
     sheet(`<h2 style="margin-top:0">${ttl}</h2>
@@ -586,7 +592,9 @@ function form(kind,item,t0){
     <label class="fl">${kind==='tx'?'Note (facultatif)':'Nom'}<input id="fn" maxlength="40" value="${esc(f.n||'')}" placeholder="${kind==='fixe'?(f.t==='rev'?'Ex. Salaire':'Ex. Forfait téléphone'):kind==='prev'?'Ex. Cadeaux de Noël':'Ex. Plein au Leclerc'}"></label>
     <div class="fl">Catégorie<div class="chips" id="fc">${cats.map(c=>`<button class="chip ${f.c===c[0]?'on':''}" data-c="${c[0]}"><i style="background:${c[2]}"></i>${c[1]}</button>`).join('')}</div></div>
     ${kind==='fixe'?`<label class="fl">Jour du mois<input id="fd" type="number" min="1" max="31" inputmode="numeric" value="${f.day}"></label>`
-      :`<label class="fl">Date<input id="fd" type="date" value="${f.d}"></label>`}
+      :`<label class="fl">Date<input id="fd" type="date" value="${f.d}"></label>
+      ${item?'':`<label class="fl">Pendant combien de mois ?<input id="fr" type="number" min="1" max="24" inputmode="numeric" value="${f.r||1}"></label>`}
+      <p class="note" style="margin-left:0">Date dans le futur : l’opération est prévue et s’ajoute à ton compte ce jour-là.${item?'':' Mets 3 pour un paiement en 3 fois, par exemple.'}</p>`}
     ${kind==='fixe'&&!item?'<p class="note" style="margin-left:0">Si ce jour est aujourd’hui ou déjà passé, le fixe commencera le mois prochain.</p>':''}
     <div class="acts"><button class="btn" id="fs">Enregistrer</button>${item?'<button class="btn sec" id="fx" style="color:#e5484d">Supprimer</button>':''}<button class="btn sec" data-close>Annuler</button></div>`);
     $('#ft').onclick=e=>{const x=e.target.closest('[data-t]');if(!x)return;grab();f.t=x.dataset.t;draw()};
@@ -598,8 +606,13 @@ function form(kind,item,t0){
       if(kind==='fixe'){o.day=Math.min(31,Math.max(1,parseInt(f.day)||1));
         o.from=item?.from||(o.day>new Date().getDate()?ym(td()):addM(ym(td()),1))}
       else{o.d=f.d||td();if(item?.f)o.f=item.f}
-      const i=list.findIndex(x=>x.id===o.id);i>=0?list[i]=o:list.push(o);
-      save();close();bank();toast('Enregistré')};
+      if(kind==='fixe'){const i=list.findIndex(x=>x.id===o.id);i>=0?list[i]=o:list.push(o);save();close();bank();toast('Enregistré');return}
+      const n=item?1:Math.min(24,Math.max(1,parseInt(f.r)||1)),T=td();let fut=0;
+      if(item){const i=list.findIndex(x=>x.id===item.id);if(i>=0)list.splice(i,1)}
+      for(let k=0;k<n;k++){const d=k?addMo(o.d,k):o.d,oo={...o,id:k?uid():o.id,d};
+        if(n>1)oo.n=(o.n||cat(o.t,o.c)[1])+' ('+(k+1)+'/'+n+')';
+        if(d>T){delete oo.f;b.prev.push(oo);fut++}else b.tx.push(oo)}
+      save();close();bank();toast(fut?(n>1?n+' mois prévus':'Opération prévue le '+fd(o.d)):'Enregistré')};
     if(item)$('#fx').onclick=()=>{if(!arm){arm=true;$('#fx').textContent='Confirmer ?';return}
       if(kind==='tx'&&item.f)(b.skip=b.skip||[]).push(item.f+'|'+ym(item.d));list.splice(list.findIndex(x=>x.id===item.id),1);save();close();bank();toast('Supprimé')};
   };
